@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2026년 응급실 스케줄 생성기 (V6)</title>
+    <title>2026년 응급실 스케줄 생성기 (V7 - 시간대 수정)</title>
     <!-- Tailwind CSS 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -16,10 +16,10 @@
 </head>
 <body class="bg-gray-100 p-4 md:p-8">
     <div class="max-w-7xl mx-auto bg-white p-6 md:p-8 rounded-xl shadow-lg">
-        <h1 class="text-3xl font-bold text-blue-700 mb-4">2026년 응급실 스케줄 생성기 (V6)</h1>
+        <h1 class="text-3xl font-bold text-blue-700 mb-4">2026년 응급실 스케줄 생성기 (V7)</h1>
         <p class="text-gray-700 mb-6">
             최종 버전: 4대 근무 유형(평일주간/야간, 휴일주간/야간)의 공정성을 최우선으로 고려합니다.<br>
-            <strong>규칙:</strong> 1. 연속 근무 금지. 2. 5단계 동적 공정성 배분. 3. 파트너 순환.
+            <strong>규칙:</strong> 1. 연속 근무 금지. 2. 5단계 동적 공정성 배분. 3. 파트너 순환. (시간대 오류 수정)
         </p>
 
         <!-- 통계 섹션 -->
@@ -80,6 +80,14 @@
             '2026-12-25'  // 성탄절
         ]);
 
+        // [V7] 로컬 시간 기준 YYYY-MM-DD 반환 헬퍼 함수
+        function getLocalDateString(date) {
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
         // [V5] 날짜가 휴일(주말+공휴일)인지 확인하는 함수
         function isHoliday(date, holidaySet) {
             const day = date.getDay();
@@ -87,8 +95,8 @@
             if (day === 0 || day === 6) {
                 return true;
             }
-            // YYYY-MM-DD 형식의 문자열로 변환
-            const dateString = date.toISOString().split('T')[0];
+            // YYYY-MM-DD 형식의 문자열로 변환 (V7 - 로컬 시간 기준)
+            const dateString = getLocalDateString(date);
             if (holidaySet.has(dateString)) {
                 return true;
             }
@@ -153,12 +161,14 @@
             let currentShiftTime = 1; // 근무 시점을 기록할 가상 시간
             let partnerSelectionOffset = 1; // 파트너 순환용 오프셋
 
-            const startDate = new Date(year, 0, 7); // 1월 6일로 시작일 변경
+            // 1월 6일로 정확히 설정
+            const startDate = new Date(year, 0, 6); 
             const endDate = new Date(year, 11, 31);
 
             for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
                 const currentDate = new Date(d);
-                const dateString = currentDate.toISOString().split('T')[0];
+                // [V7] 로컬 시간 기준 문자열 사용
+                const dateString = getLocalDateString(currentDate);
                 const dayOfWeek = ['일', '월', '화', '수', '목', '금', '토'][currentDate.getDay()];
                 
                 const todayIsHoliday = isHoliday(currentDate, publicHolidays);
@@ -334,7 +344,7 @@
             const url = URL.createObjectURL(blob);
             
             link.setAttribute("href", url);
-            link.setAttribute("download", "2026_ER_Schedule_V6_Jan6.csv"); // 파일명 변경
+            link.setAttribute("download", "2026_ER_Schedule_V7_Jan6_Fixed.csv"); // 파일명 변경
             link.style.visibility = 'hidden';
             
             document.body.appendChild(link);
