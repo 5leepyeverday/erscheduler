@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026년 응급실 스케줄 생성기 (V9 - 통합본)</title>
+    <!-- Tailwind CSS 로드 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Inter 폰트 적용 */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+    <div class="max-w-7xl mx-auto bg-white p-6 md:p-8 rounded-xl shadow-lg">
+        <h1 class="text-3xl font-bold text-blue-700 mb-4">2026년 응급실 스케줄 생성기 (V9 - 통합본)</h1>
+        <p class="text-gray-700 mb-6">
+            4대 근무 유형 공정성을 최우선으로 고려하며, 파트너 순환 옵션을 제공합니다.<br>
+            <strong>규칙:</strong> 1. 연속 근무 금지. 2. 5단계 동적 공정성 배분. 3. 파트너 순환 (선택 가능).
+        </p>
+
+        <!-- [V9] V7/V8 전환 토글 -->
+        <div class="flex items-center space-x-3 bg-blue-50 p-4 rounded-lg mb-6 shadow-sm border border-blue-200">
+            <input id="partner-rotation-toggle" type="checkbox" checked class="h-5 w-5 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
+            <label for="partner-rotation-toggle" class="font-semibold text-lg text-blue-800">
+                파트너 순환 (V7 로직) 활성화
+            </label>
+        </div>
+
+        <!-- 통계 섹션 -->
+        <div class="mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-3">의사별 근무 통계 (4대 유형)</h2>
+            <div id="stats" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                <!-- 통계 데이터가 여기에 동적으로 삽입됩니다. -->
+            </div>
+        </div>
+
+        <!-- 스케줄 테이블 섹션 -->
+        <div>
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-2xl font-semibold text-gray-800">2026년 스케줄 표 (휴일 <span class="text-red-100 bg-red-500 px-1 rounded">배경</span>)</h2>
+                <!-- CSV 내보내기 버튼 -->
+                <button id="export-csv-btn" class="bg-green-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-green-700 transition duration-200">
+                    CSV로 내보내기
+                </button>
+            </div>
+            <div class="overflow-x-auto rounded-lg border border-gray-200" style="max-height: 600px;">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50 sticky top-0">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">날짜</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">요일</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">주간 (Day)</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">야간 (Night)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="schedule-body" class="bg-white divide-y divide-gray-200">
+                        <!-- 스케줄 데이터가 여기에 동적으로 삽입됩니다. -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 전역 변수 및 상수 ---
+        let generatedSchedule = [];
+        const doctorsList = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+        const year = 2026;
+        const publicHolidays = new Set([
+            '2026-01-01', // 신정
+            '2026-02-16', // 설날 연휴
+            '2026-02-17', // 설날
+            '2026-02-18', // 설날 연휴
+            '2026-03-02', // 삼일절 (대체)
+            '2026-05-05', // 어린이날
+            '2026-05-25', // 부처님오신날 (대체)
+            '2026-06-03', // 지방선거일
+            '2026-08-17', // 광복절 (대체)
+            '2026-09-24', // 추석 연휴
+            '2026-09-25', // 추석
+            '2026-10-05', // 개천절 (대체)
+            '2026-10-09', // 한글날
+            '2026-12-25'  // 성탄절
+        ]);
+
+        // --- 헬퍼 함수 ---
+
+        // [V7] 로컬 시간 기준 YYYY-MM-DD 반환 헬퍼 함수
+        function getLocalDateString(date) {
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // [V5] 날짜가 휴일(주말+공휴일)인지 확인하는 함수
+        function isHoliday(date, holidaySet) {
+            const day = date.getDay();
+            if (day === 0 || day === 6) return true; // 0: 일요일, 6: 토요일
+            const dateString = getLocalDateString(date);
+            if (holidaySet.has(dateString)) return true;
+            return false;
+        }
+
+        // [V6] 동적 정렬 함수
+        function getSortedPool(availableDocs, shiftType) {
+            availableDocs.sort((a, b) => {
+                switch (shiftType) {
+                    case 'HOLIDAY_DAY':
+                        if (a.holidayDayShifts !== b.holidayDayShifts) return a.holidayDayShifts - b.holidayDayShifts;
+                        if (a.totalHolidayShifts !== b.totalHolidayShifts) return a.totalHolidayShifts - b.totalHolidayShifts;
+                        if (a.dayShifts !== b.dayShifts) return a.dayShifts - b.dayShifts;
+                        if (a.totalShifts !== b.totalShifts) return a.totalShifts - b.totalShifts;
+                        return a.lastShift - b.lastShift;
+                    case 'HOLIDAY_NIGHT':
+                        if (a.holidayNightShifts !== b.holidayNightShifts) return a.holidayNightShifts - b.holidayNightShifts;
+                        if (a.totalHolidayShifts !== b.totalHolidayShifts) return a.totalHolidayShifts - b.totalHolidayShifts;
+                        if (a.nightShifts !== b.nightShifts) return a.nightShifts - b.nightShifts;
+                        if (a.totalShifts !== b.totalShifts) return a.totalShifts - b.totalShifts;
+                        return a.lastShift - b.lastShift;
+                    case 'WEEKDAY_DAY':
+                        if (a.weekdayDayShifts !== b.weekdayDayShifts) return a.weekdayDayShifts - b.weekdayDayShifts;
+                        if (a.totalWeekdayShifts !== b.totalWeekdayShifts) return a.totalWeekdayShifts - b.totalWeekdayShifts;
+                        if (a.dayShifts !== b.dayShifts) return a.dayShifts - b.dayShifts;
+                        if (a.totalShifts !== b.totalShifts) return a.totalShifts - b.totalShifts;
+                        return a.lastShift - b.lastShift;
+                    case 'WEEKDAY_NIGHT':
+                        if (a.weekdayNightShifts !== b.weekdayNightShifts) return a.weekdayNightShifts - b.weekdayNightShifts;
+                        if (a.totalWeekdayShifts !== b.totalWeekdayShifts) return a.totalWeekdayShifts - b.totalWeekdayShifts;
+                        if (a.nightShifts !== b.nightShifts) return a.nightShifts - b.nightShifts;
+                        if (a.totalShifts !== b.totalShifts) return a.totalShifts - b.totalShifts;
+                        return a.lastShift - b.lastShift;
+                }
+            });
+            return availableDocs;
+        }
+
+        // --- 렌더링 함수 ---
+
+        // 테이블 렌더링 함수
+        function renderTable(schedule) {
+            const scheduleBody = document.getElementById('schedule-body');
+            let tableHtml = '';
+            schedule.forEach(item => {
+                const rowClass = item.isHoliday ? 'bg-red-50' : ''; 
+                tableHtml += `
+                    <tr class="${rowClass}">
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${item.date}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${item.dayOfWeek}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-semibold text-blue-600">${item.day.join(', ')}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-semibold text-indigo-600">${item.night.join(', ')}</td>
+                    </tr>
+                `;
+            });
+            scheduleBody.innerHTML = tableHtml;
+        }
+
+        // 통계 렌더링 함수
+        function renderStats(doctors) {
+            const statsDiv = document.getElementById('stats');
+            let statsHtml = '';
+            doctors.sort((a, b) => a.id.localeCompare(b.id)); // ID 순으로 정렬
+            doctors.forEach(doc => {
+                statsHtml += `
+                    <div class="bg-gray-50 p-3 rounded-lg shadow-sm">
+                        <div class="font-bold text-lg text-gray-800">${doc.id}</div>
+                        <div class="text-sm text-gray-600 mt-1">
+                            <div>
+                                총: <span class="font-semibold text-black">${doc.totalShifts}</span>
+                                (휴일: <span class="font-semibold text-red-600">${doc.totalHolidayShifts}</span>)
+                            </div>
+                            <div class="mt-1">
+                                주간: <span class="font-semibold text-blue-600">${doc.dayShifts}</span>
+                                <span class="text-xs">(평: ${doc.weekdayDayShifts}, 휴: ${doc.holidayDayShifts})</span>
+                            </div>
+                            <div class="mt-1">
+                                야간: <span class="font-semibold text-indigo-600">${doc.nightShifts}</span>
+                                <span class="text-xs">(평: ${doc.weekdayNightShifts}, 휴: ${doc.holidayNightShifts})</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            statsDiv.innerHTML = statsHtml;
+        }
+
+        // --- CSV 내보내기 함수 ---
+        function exportToCSV() {
+            if (generatedSchedule.length === 0) {
+                console.log("No schedule data to export.");
+                return;
+            }
+
+            const isRotationEnabled = document.getElementById('partner-rotation-toggle').checked;
+            const filename = isRotationEnabled 
+                ? "2026_ER_Schedule_V7_Rotation.csv" 
+                : "2026_ER_Schedule_V8_FixedPartner.csv";
+
+            let csvContent = "Date,DayOfWeek,DayWorker1,DayWorker2,NightWorker1,NightWorker2,IsHoliday\r\n";
+            generatedSchedule.forEach(item => {
+                const row = [
+                    item.date,
+                    item.dayOfWeek,
+                    item.day[0],
+                    item.day[1],
+                    item.night[0],
+                    item.night[1],
+                    item.isHoliday ? 'H' : ''
+                ].join(",");
+                csvContent += row + "\r\n";
+            });
+
+            const BOM = "\uFEFF";
+            const csvData = BOM + csvContent;
+            const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // --- [V9] 핵심 스케줄 생성 함수 ---
+        function generateAndRender() {
+            // 1. 토글 상태 확인
+            const isRotationEnabled = document.getElementById('partner-rotation-toggle').checked;
+
+            // 2. 모든 상태 초기화 (중요: 함수 호출 시마다 리셋)
+            let doctors = doctorsList.map(id => ({
+                id: id,
+                lastShift: 0, totalShifts: 0, dayShifts: 0, nightShifts: 0,
+                totalHolidayShifts: 0, totalWeekdayShifts: 0, holidayDayShifts: 0,
+                holidayNightShifts: 0, weekdayDayShifts: 0, weekdayNightShifts: 0
+            }));
+            generatedSchedule = []; // 전역 스케줄 데이터 초기화
+            let whoWorkedNightYesterday = [];
+            let currentShiftTime = 1;
+            let partnerSelectionOffset = 1; // V7(순환) 로직용
+
+            // 3. 날짜 설정
+            const startDate = new Date(year, 0, 6); 
+            const endDate = new Date(year, 11, 31);
+
+            // 4. 스케줄 생성 루프
+            for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                const currentDate = new Date(d);
+                const dateString = getLocalDateString(currentDate);
+                const dayOfWeek = ['일', '월', '화', '수', '목', '금', '토'][currentDate.getDay()];
+                const todayIsHoliday = isHoliday(currentDate, publicHolidays);
+                const dayShiftType = todayIsHoliday ? 'HOLIDAY_DAY' : 'WEEKDAY_DAY';
+                const nightShiftType = todayIsHoliday ? 'HOLIDAY_NIGHT' : 'WEEKDAY_NIGHT';
+
+                // --- 주간 근무 배정 ---
+                let dayPool = doctors.filter(doc => !whoWorkedNightYesterday.includes(doc.id));
+                dayPool = getSortedPool(dayPool, dayShiftType);
+                
+                let doc1_day = dayPool[0];
+                let doc2_day;
+
+                // [V9] 핵심 분기: V7(순환) 또는 V8(고정) 로직 선택
+                if (isRotationEnabled) {
+                    let doc2_day_index = (partnerSelectionOffset % (dayPool.length - 1)) + 1;
+                    doc2_day = dayPool[doc2_day_index];
+                    partnerSelectionOffset++; // 순환 로직일 때만 오프셋 증가
+                } else {
+                    doc2_day = dayPool[1]; // V8 고정 로직
+                }
+                
+                let dayShift = [doc1_day, doc2_day];
+                const dayShiftIds = dayShift.map(d => d.id).sort();
+
+                // 주간 통계 업데이트
+                dayShiftIds.forEach(id => {
+                    const docIndex = doctors.findIndex(d => d.id === id);
+                    if(docIndex > -1) {
+                        doctors[docIndex].lastShift = currentShiftTime;
+                        doctors[docIndex].totalShifts++;
+                        doctors[docIndex].dayShifts++;
+                        if (todayIsHoliday) {
+                            doctors[docIndex].totalHolidayShifts++;
+                            doctors[docIndex].holidayDayShifts++;
+                        } else {
+                            doctors[docIndex].totalWeekdayShifts++;
+                            doctors[docIndex].weekdayDayShifts++;
+                        }
+                    }
+                });
+
+                // --- 야간 근무 배정 ---
+                let nightPool = doctors.filter(doc => !dayShiftIds.includes(doc.id));
+                nightPool = getSortedPool(nightPool, nightShiftType);
+                
+                let doc1_night = nightPool[0];
+                let doc2_night;
+
+                // [V9] 핵심 분기: V7(순환) 또는 V8(고정) 로직 선택
+                if (isRotationEnabled) {
+                    let doc2_night_index = (partnerSelectionOffset % (nightPool.length - 1)) + 1;
+                    doc2_night = nightPool[doc2_night_index];
+                    partnerSelectionOffset++; // 순환 로직일 때만 오프셋 증가
+                } else {
+                    doc2_night = nightPool[1]; // V8 고정 로직
+                }
+
+                let nightShift = [doc1_night, doc2_night];
+                const nightShiftIds = nightShift.map(d => d.id).sort();
+
+                // 야간 통계 업데이트
+                nightShiftIds.forEach(id => {
+                    const docIndex = doctors.findIndex(d => d.id === id);
+                     if(docIndex > -1) {
+                        doctors[docIndex].lastShift = currentShiftTime;
+                        doctors[docIndex].totalShifts++;
+                        doctors[docIndex].nightShifts++;
+                        if (todayIsHoliday) {
+                            doctors[docIndex].totalHolidayShifts++;
+                            doctors[docIndex].holidayNightShifts++;
+                        } else {
+                            doctors[docIndex].totalWeekdayShifts++;
+                            doctors[docIndex].weekdayNightShifts++;
+                        }
+                    }
+                });
+
+                // --- 루프 마무리 ---
+                generatedSchedule.push({
+                    date: dateString, dayOfWeek: dayOfWeek,
+                    day: dayShiftIds, night: nightShiftIds,
+                    isHoliday: todayIsHoliday
+                });
+                whoWorkedNightYesterday = [...nightShiftIds];
+                currentShiftTime++;
+            }
+
+            // 5. 최종 렌더링
+            renderTable(generatedSchedule);
+            renderStats(doctors);
+        }
+
+        // --- 이벤트 리스너 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const rotationToggle = document.getElementById('partner-rotation-toggle');
+            const exportBtn = document.getElementById('export-csv-btn');
+
+            // [V9] 토글 시 스케줄 다시 생성
+            rotationToggle.addEventListener('change', generateAndRender);
+            // [V9] CSV 버튼 클릭 시
+            exportBtn.addEventListener('click', exportToCSV);
+
+            // [V9] 페이지 첫 로드 시 스케줄 생성 (기본값: V7-순환)
+            generateAndRender();
+        });
+
+    </script>
+</body>
+</html>
