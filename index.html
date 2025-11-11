@@ -161,8 +161,8 @@
             let currentShiftTime = 1; // 근무 시점을 기록할 가상 시간
             let partnerSelectionOffset = 1; // 파트너 순환용 오프셋
 
-            // 1월 6일로 정확히 설정
-            const startDate = new Date(year, 0, 6); 
+            // 시작과 종료 날짜 설정
+            const startDate = new Date(year, 0, 1); 
             const endDate = new Date(year, 11, 31);
 
             for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
